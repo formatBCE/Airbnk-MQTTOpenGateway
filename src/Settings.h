@@ -11,12 +11,6 @@
 
 #define lockMacAddress "AA:BB:CC:DD:00:11" // please fill in exactly, with uppercase letters
 
-#define availabilityTopic hostname "/availability"
-#define telemetryTopic hostname "/tele"
-#define commandTopic hostname "/command"
-#define commandResultTopic hostname "/command_result"
-
-
 
 // Keep this section untouched, unless you really know what you're doing
 
@@ -25,6 +19,10 @@
 
 #define serviceUUID "0xFFF0"
 #define characteristicUUID "0xFFF2"
+#define availabilityTopic hostname "/availability"
+#define telemetryTopic hostname "/tele"
+#define commandTopic hostname "/command"
+#define commandResultTopic hostname "/command_result"
 
 #define scanInterval 0 // Define the interval in seconds between scans
 #define singleScanTime 10 // Define the duration of a single scan in seconds
