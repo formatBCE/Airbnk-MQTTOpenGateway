@@ -49,7 +49,8 @@ AsyncMqttClient mqttClient;
 TimerHandle_t mqttReconnectTimer;
 TimerHandle_t wifiReconnectTimer;
 String localIp;
-byte retryAttempts = 0;
+byte mqttRetryAttempts = 0;
+byte wifiRetryAttempts = 0;
 unsigned long last = 0;
 NimBLEScan* pBLEScan;
 NimBLEClient* pClient;
@@ -77,12 +78,11 @@ void connectToMqtt() {
 }
 
 void handleMqttDisconnect() {
-	if (retryAttempts > 10) {
-		Serial.println("Too many retries. Cleaning data and restarting.");
-		preferences.clear();
+	if (mqttRetryAttempts > 10) {
+		Serial.println("Too many retries. Restarting.");
 		ESP.restart();
 	} else {
-		retryAttempts++;
+		mqttRetryAttempts++;
 	}
 	if (WiFi.isConnected()) {
 		Serial.println("Starting MQTT reconnect timer");
@@ -103,12 +103,12 @@ bool handleWifiDisconnect() {
 		Serial.println("WiFi appears to be connected. Not retrying.");
 		return true;
 	}
-	if (retryAttempts > 10) {
+	if (wifiRetryAttempts > 10) {
 		Serial.println("Too many retries. Cleaning data and restarting.");
 		preferences.clear();
 		ESP.restart();
 	} else {
-		retryAttempts++;
+		wifiRetryAttempts++;
 	}
 	if (mqttClient.connected()) {
 		mqttClient.disconnect();
@@ -144,7 +144,7 @@ void WiFiEvent(WiFiEvent_t event) {
 			Serial.println("Stopping wifi reconnect timer");
 			xTimerStop(wifiReconnectTimer, 0);
 		}
-		retryAttempts = 0;
+		wifiRetryAttempts = 0;
 		break;
 	case SYSTEM_EVENT_STA_DISCONNECTED:
 		digitalWrite(LED_BUILTIN, LED_ON);
@@ -414,7 +414,7 @@ class AirbnkAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
 
 void onMqttConnect(bool sessionPresent) {
   	Serial.println("Connected to MQTT.");
-	retryAttempts = 0;
+	mqttRetryAttempts = 0;
 	
 	if (mqttClient.publish(availabilityTopic.c_str(), 0, 1, "CONNECTED") == true) {
 		Serial.print("Success sending message to topic:\t");

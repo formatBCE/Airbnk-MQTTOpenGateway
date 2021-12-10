@@ -1,4 +1,3 @@
-Settings_local.h
 .pioenvs
 .piolibdeps
 .clang_complete
@@ -6,6 +5,5 @@ Settings_local.h
 .idea
 .dblite
 include/
-Settings_*.h
 .pio/*
 .vscode/*
