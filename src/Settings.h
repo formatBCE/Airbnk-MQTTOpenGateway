@@ -1,28 +1,20 @@
 
-#define ssid "" // WiFi SSID
-#define password "" // WiFi password
+#define ap_ssid "AirbnkOpenGateway"
 
-#define hostname "airbnk_lock" // will be used as MQTT root topic
-
-#define mqttHost IPAddress(192, 168, 1, 1) // replace with your MQTT broker IP
-#define mqttPort 1883
-#define mqttUser "" // MQTT user
-#define mqttPassword "" // MQTT password
-
-#define lockMacAddress "AA:BB:CC:DD:00:11" // please fill in exactly, with uppercase letters
-
-
-// Keep this section untouched, unless you really know what you're doing
+#define wifi_ssid_pref "wifi_ssid"
+#define wifi_pwd_pref "wifi_pwd"
+#define mqtt_ip_pref "mqtt_ip"
+#define mqtt_port_pref "mqtt_port"
+#define mqtt_user_pref "mqtt_user"
+#define mqtt_pass_pref "mqtt_pass"
+#define mqtt_topic_pref "mqtt_topic"
+#define lock_mac_pref "lock_mac"
 
 #define LED_BUILTIN 2
 #define LED_ON 0
 
 #define serviceUUID "0xFFF0"
 #define characteristicUUID "0xFFF2"
-#define availabilityTopic hostname "/availability"
-#define telemetryTopic hostname "/tele"
-#define commandTopic hostname "/command"
-#define commandResultTopic hostname "/command_result"
 
 #define scanInterval 0 // Define the interval in seconds between scans
 #define singleScanTime 10 // Define the duration of a single scan in seconds

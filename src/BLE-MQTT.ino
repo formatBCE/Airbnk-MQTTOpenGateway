@@ -9,6 +9,8 @@ extern "C" {
 
 #include <AsyncTCP.h>
 #include <Arduino.h>
+#include <ESPAsyncWebServer.h>
+#include <Preferences.h>
 
 #include <NimBLEDevice.h>
 #include <NimBLEAdvertisedDevice.h>
@@ -20,8 +22,28 @@ extern "C" {
 #include <ArduinoJson.h>
 #include "Settings.h"
 
+// Config fields
+AsyncWebServer server(80);
+Preferences preferences;
+bool isSetUp = false;
+
+String wifi_ssid = "";
+String wifi_pwd = "";
+String mqtt_ip = "";
+int mqtt_port = 0;
+String mqtt_user = "";
+String mqtt_pass = "";
+String mqtt_topic = "";
+String lock_mac = "";
+
+// Main fields
 static const int scanTime = singleScanTime;
 static const int waitTime = scanInterval;
+String availabilityTopic;
+String commandTopic;
+String telemetryTopic;
+String commandResultTopic;
+String advertTopic;
 
 AsyncMqttClient mqttClient;
 TimerHandle_t mqttReconnectTimer;
@@ -38,15 +60,15 @@ bool isSending;
 
 void connectToWifi() {
   	Serial.println("Connecting to WiFi...");
-	WiFi.begin(ssid, password);
-	WiFi.setHostname(hostname);
+	WiFi.begin(wifi_ssid.c_str(), wifi_pwd.c_str());
+	WiFi.setHostname(mqtt_topic.c_str());
 }
 
 void connectToMqtt() {
   	Serial.println("Connecting to MQTT");
 	if (WiFi.isConnected()) {
-		mqttClient.setCredentials(mqttUser, mqttPassword);
-		mqttClient.setClientId(hostname);
+		mqttClient.setCredentials(mqtt_user.c_str(), mqtt_pass.c_str());
+		mqttClient.setClientId(mqtt_topic.c_str());
 	 	mqttClient.connect();
 	} else {
 		Serial.println("Cannot reconnect MQTT - WiFi error");
@@ -56,7 +78,8 @@ void connectToMqtt() {
 
 void handleMqttDisconnect() {
 	if (retryAttempts > 10) {
-		Serial.println("Too many retries. Restarting");
+		Serial.println("Too many retries. Cleaning data and restarting.");
+		preferences.clear();
 		ESP.restart();
 	} else {
 		retryAttempts++;
@@ -81,7 +104,8 @@ bool handleWifiDisconnect() {
 		return true;
 	}
 	if (retryAttempts > 10) {
-		Serial.println("Too many retries. Restarting");
+		Serial.println("Too many retries. Cleaning data and restarting.");
+		preferences.clear();
 		ESP.restart();
 	} else {
 		retryAttempts++;
@@ -133,7 +157,7 @@ void WiFiEvent(WiFiEvent_t event) {
 		break;
 	case SYSTEM_EVENT_STA_START:
 		Serial.println("STA Start");
-		tcpip_adapter_set_hostname(TCPIP_ADAPTER_IF_STA, hostname);
+		tcpip_adapter_set_hostname(TCPIP_ADAPTER_IF_STA, mqtt_topic.c_str());
 		if (xTimerIsTimerActive(wifiReconnectTimer) != pdFALSE) {
 			TickType_t xRemainingTime = xTimerGetExpiryTime( wifiReconnectTimer ) - xTaskGetTickCount();
 			Serial.print("WiFi Time remaining: ");
@@ -161,7 +185,7 @@ bool sendTelemetry() {
 	char teleMessageBuffer[258];
 	serializeJson(tele, teleMessageBuffer);
 
-	if (mqttClient.publish(telemetryTopic, 0, 0, teleMessageBuffer) == true) {
+	if (mqttClient.publish(telemetryTopic.c_str(), 0, 0, teleMessageBuffer) == true) {
 		Serial.println("Telemetry sent");
 		return true;
 	} else {
@@ -174,7 +198,7 @@ bool reportDevice(NimBLEAdvertisedDevice advertisedDevice) {
 
 	String mac_address = advertisedDevice.getAddress().toString().c_str();
 	mac_address.toUpperCase();
-	if (mac_address != lockMacAddress) {
+	if (mac_address != lock_mac.c_str()) {
 		return false;
 	}
 
@@ -192,15 +216,13 @@ bool reportDevice(NimBLEAdvertisedDevice advertisedDevice) {
 	char JSONmessageBuffer[512];
 	serializeJson(doc, JSONmessageBuffer);
 
-	String publishTopic = String(hostname) + "/adv";
-
 	if (mqttClient.connected()) {
-		if (mqttClient.publish((char *)publishTopic.c_str(), 0, 0, JSONmessageBuffer) == true) {
+		if (mqttClient.publish(advertTopic.c_str(), 0, 0, JSONmessageBuffer) == true) {
 			Serial.println("Lock advertisement sent.");
 			return true;
 		} else {
-			Serial.print("Error sending advertisement message: ");
-			Serial.println(publishTopic);
+			Serial.print("Error sending advertisement message.");
+			Serial.println(advertTopic);
 			Serial.print("Message: ");
 			Serial.println(JSONmessageBuffer);
 			return false;
@@ -223,11 +245,11 @@ void sendCommandResult(boolean success, String error, int sign) {
 	doc["success"] = success;
 	doc["error"] = error;
 	doc["sign"] = sign;
-	doc["mac"] = lockMacAddress;
+	doc["mac"] = lock_mac;
 	char messageBuffer[130];
 	serializeJson(doc, messageBuffer);
 
-	if (mqttClient.publish(commandResultTopic, 0, 0, messageBuffer) == true) {
+	if (mqttClient.publish(commandResultTopic.c_str(), 0, 0, messageBuffer) == true) {
 		Serial.println("Command result sent");
 	} else {
 		Serial.println("Error sending command result");
@@ -378,7 +400,7 @@ class AirbnkAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
 				pBLEScan->stop(); // resetting the scan
 			}
 		} else {
-			Serial.println("Cannot report; mqtt disconnected");
+			Serial.println("Cannot report: mqtt disconnected");
 			if (xTimerIsTimerActive(mqttReconnectTimer) != pdFALSE) {
 				TickType_t xRemainingTime = xTimerGetExpiryTime( mqttReconnectTimer ) - xTaskGetTickCount();
 				Serial.print("Time remaining: ");
@@ -393,11 +415,11 @@ class AirbnkAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
 void onMqttConnect(bool sessionPresent) {
   	Serial.println("Connected to MQTT.");
 	retryAttempts = 0;
-
-	if (mqttClient.publish(availabilityTopic, 0, 1, "CONNECTED") == true) {
+	
+	if (mqttClient.publish(availabilityTopic.c_str(), 0, 1, "CONNECTED") == true) {
 		Serial.print("Success sending message to topic:\t");
 		Serial.println(availabilityTopic);
-		mqttClient.subscribe(commandTopic, 2);
+		mqttClient.subscribe(commandTopic.c_str(), 2);
 	} else {
 		Serial.println("Error sending message");
 	}
@@ -419,10 +441,93 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
 	handleMqttDisconnect();
 }
 
-void setup() {
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE HTML><html><head>
+<title>Airbnk Gateway configuration</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style> 
+input[type=submit] {
+  background-color: #5e9ca0;
+  border: none;
+  color: white;
+  padding: 16px 32px;
+  text-decoration: none;
+  margin: 4px 2px;
+  cursor: pointer;
+}
+</style>
+</head><body>
+<h1 style="color: #5e9ca0;">Airbnk Gateway Configuration</h1>
+<h4>by @formatBCE</h4>
+<p>Insert required data into fields below, and save configuration.</p>
+<p>Gateway will reboot and connect to your WiFi and MQTT automatically.&nbsp;</p>
+<p><span style="color: #ff0000;"><strong>PLEASE DOUBLE-CHECK ENTERED DATA BEFORE SAVING!</strong></span></p>
+<p>After saving, there will be no way to change them.</p>
+<p>&nbsp;</p>
+<form action="/config">
+<p><strong>WiFi (2.4 GHz)</strong></p>
+<p>SSID: <input name="input1" type="text" /></p>
+<p>Password: <input name="input2" type="text" /></p>
+<p><strong>MQTT</strong></p>
+<p>Broker IP: <input name="input3" type="text" value="192.168.0.1" /></p>
+<p>Broker port: <input name="input4" type="number" value="1883" /></p>
+<p>User: <input name="input5" type="text" /></p>
+<p>Password: <input name="input6" type="text" /></p>
+<p>Root topic: <input name="input7" type="text" value="airbnk_lock" /></p>
+<p><strong>Target lock</strong></p>
+<p>MAC address: <input name="input8" type="text" value="12:34:56:78:90:AB" /></p>
+<p><input type="submit" value="Save and reboot" /></p>
+</form>
+</body></html>)rawliteral";
+const char reset_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE HTML><html><head>
+<title>Airbnk Gateway configuration</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style> 
+input[type=submit] {
+  background-color: #5e9ca0;
+  border: none;
+  color: white;
+  padding: 16px 32px;
+  text-decoration: none;
+  margin: 4px 2px;
+  cursor: pointer;
+}
+</style>
+</head><body>
+<h1 style="color: #5e9ca0;">Airbnk Gateway Configuration</h1>
+<h4>by @formatBCE</h4>
+<p>You may reset gateway configuration on this page.</p>
+<p>WiFi access point "AirbnkOpenGateway will appear.</p>
+<p>Connect to it, and configure gateway again.</p>
+<p>&nbsp;</p>
+<form action="/reset">
+<p><input type="submit" value="Reset configuration and restart" /></p>
+</form>
+</body></html>)rawliteral";
+const char confirm_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE HTML><html><head>
+<title>Airbnk Gateway configuration</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head><body>
+<h1 style="color: #5e9ca0;">Airbnk Gateway Configuration</h1>
+<h4>by @formatBCE</h4>
+<p>Configuration saved, device restarted. You may close this page now.</p>
+</body></html>)rawliteral";
+const char* PARAM_INPUT_1 = "input1";
+const char* PARAM_INPUT_2 = "input2";
+const char* PARAM_INPUT_3 = "input3";
+const char* PARAM_INPUT_4 = "input4";
+const char* PARAM_INPUT_5 = "input5";
+const char* PARAM_INPUT_6 = "input6";
+const char* PARAM_INPUT_7 = "input7";
+const char* PARAM_INPUT_8 = "input8";
 
-	Serial.begin(115200);
+void notFound(AsyncWebServerRequest *request) {
+  request->send(404, "text/plain", "Not found");
+}
 
+void mainSetup() {
 	pinMode(LED_BUILTIN, OUTPUT);
 	digitalWrite(LED_BUILTIN, LED_ON);
 
@@ -435,8 +540,8 @@ void setup() {
 	mqttClient.onDisconnect(onMqttDisconnect);
 	mqttClient.onMessage(onMqttMessage);
 
-	mqttClient.setServer(mqttHost, mqttPort);
-	mqttClient.setWill(availabilityTopic, 0, 1, "DISCONNECTED");
+	mqttClient.setServer(mqtt_ip.c_str(), mqtt_port);
+	mqttClient.setWill(availabilityTopic.c_str(), 0, 1, "DISCONNECTED");
 	mqttClient.setKeepAlive(60);
 
 	connectToWifi();
@@ -445,7 +550,6 @@ void setup() {
 	NimBLEDevice::setPower(ESP_PWR_LVL_P9);
 	pClient = NimBLEDevice::createClient();
   	pBLEScan = NimBLEDevice::getScan(); //create new scan
-  	//pBLEScan->setActiveScan(true);
 	pBLEScan->setAdvertisedDeviceCallbacks(new AirbnkAdvertisedDeviceCallbacks());
 	pBLEScan->setInterval(bleScanInterval);
 	pBLEScan->setWindow(bleScanWindow);
@@ -457,10 +561,103 @@ void setup() {
 		1,
 		&NimBLEScan,
 		1);
+	server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+		request->send_P(200, "text/html", reset_html);
+	});
+
+	// Send a GET request to <ESP_IP>/get?input1=<inputMessage>
+	server.on("/reset", HTTP_GET, [] (AsyncWebServerRequest *request) {
+		preferences.clear();
+		request->send(200, "text/html", confirm_html);
+		delay(3000);
+		ESP.restart();
+	});
+	server.onNotFound(notFound);
+	server.begin();
 }
 
-void loop() {
+void mainLoop() {
 	TIMERG0.wdt_wprotect=TIMG_WDT_WKEY_VALUE;
 	TIMERG0.wdt_feed=1;
 	TIMERG0.wdt_wprotect=0;
+}
+
+void configSetup() {
+	Serial.print("Setting AP (Access Point)…");
+  	WiFi.softAP(ap_ssid);
+	IPAddress IP = WiFi.softAPIP();
+  	Serial.print("AP IP address: ");
+  	Serial.println(IP);
+  	// Send web page with input fields to client
+	server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+		request->send_P(200, "text/html", index_html);
+	});
+
+	// Send a GET request to <ESP_IP>/get?input1=<inputMessage>
+	server.on("/config", HTTP_GET, [] (AsyncWebServerRequest *request) {
+		String wifi_ssid_param = request->getParam(PARAM_INPUT_1)->value();
+		String wifi_pwd_param = request->getParam(PARAM_INPUT_2)->value();
+		String mqtt_ip_param = request->getParam(PARAM_INPUT_3)->value();
+		String mqtt_port_param = request->getParam(PARAM_INPUT_4)->value();
+		String mqtt_user_param = request->getParam(PARAM_INPUT_5)->value();
+		String mqtt_pass_param = request->getParam(PARAM_INPUT_6)->value();
+		String mqtt_topic_param = request->getParam(PARAM_INPUT_7)->value();
+		String lock_mac_param = request->getParam(PARAM_INPUT_8)->value();
+
+		preferences.clear();
+		preferences.putString(wifi_ssid_pref, wifi_ssid_param);
+		preferences.putString(wifi_pwd_pref, wifi_pwd_param);
+		preferences.putString(mqtt_ip_pref, mqtt_ip_param);
+		preferences.putInt(mqtt_port_pref, mqtt_port_param.toInt());
+		preferences.putString(mqtt_user_pref, mqtt_user_param);
+		preferences.putString(mqtt_pass_pref, mqtt_pass_param);
+		preferences.putString(mqtt_topic_pref, mqtt_topic_param);
+		preferences.putString(lock_mac_pref, lock_mac_param);
+
+		request->send(200, "text/html", confirm_html);
+		delay(3000);
+		ESP.restart();
+	});
+	server.onNotFound(notFound);
+	server.begin();
+}
+
+bool readPrefs() {
+	wifi_ssid = preferences.getString(wifi_ssid_pref);
+	wifi_pwd = preferences.getString(wifi_pwd_pref);
+	mqtt_ip = preferences.getString(mqtt_ip_pref);
+	mqtt_port = preferences.getInt(mqtt_port_pref);
+	mqtt_user = preferences.getString(mqtt_user_pref);
+	mqtt_pass = preferences.getString(mqtt_pass_pref);
+	mqtt_topic = preferences.getString(mqtt_topic_pref);
+	lock_mac = preferences.getString(lock_mac_pref);
+
+	advertTopic = mqtt_topic + "/adv";
+	commandResultTopic = mqtt_topic + "/command_result";
+	availabilityTopic = mqtt_topic + "/availability";
+	commandTopic = mqtt_topic + "/command";
+	telemetryTopic = mqtt_topic + "/tele";
+
+	return wifi_ssid != "" 
+		&& mqtt_ip != "" 
+		&& mqtt_port != 0 
+		&& mqtt_topic != "" 
+		&& lock_mac != "";
+}
+
+void setup() {
+	Serial.begin(115200);
+	preferences.begin("airbnk_prefs", false);
+	isSetUp = readPrefs();
+	if (isSetUp) {
+	  	mainSetup();
+	} else {
+		configSetup();
+	}
+}
+
+void loop() {
+	if (isSetUp) {
+		mainLoop();
+	}
 }
