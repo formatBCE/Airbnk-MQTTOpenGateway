@@ -1,6 +1,9 @@
 
 #define ap_ssid "AirbnkOpenGateway"
 
+#define main_prefs "airbnk_prefs"
+#define wifi_prefs "wifi_prefs"
+
 #define wifi_ssid_pref "wifi_ssid"
 #define wifi_pwd_pref "wifi_pwd"
 #define mqtt_ip_pref "mqtt_ip"

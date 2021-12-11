@@ -103,9 +103,25 @@ bool handleWifiDisconnect() {
 		Serial.println("WiFi appears to be connected. Not retrying.");
 		return true;
 	}
+	digitalWrite(LED_BUILTIN, !LED_ON);
+	delay(500);
+	digitalWrite(LED_BUILTIN, LED_ON);
 	if (wifiRetryAttempts > 10) {
-		Serial.println("Too many retries. Cleaning data and restarting.");
-		preferences.clear();
+		preferences.begin(wifi_prefs, false);
+		uint16_t wiFiRestartCounter = preferences.getShort("wifi_reconnect", 0);
+		if (wiFiRestartCounter > 4) {
+			preferences.clear();
+			preferences.end();
+			preferences.begin(main_prefs, false);
+			preferences.clear();
+			preferences.end();
+			Serial.println("Too many retries. Cleaning data and restarting.");
+		} else {
+			wiFiRestartCounter++;
+			preferences.putShort("wifi_reconnect", wiFiRestartCounter);
+			preferences.end();
+			Serial.println("Too many retries. Restarting.");
+		}
 		ESP.restart();
 	} else {
 		wifiRetryAttempts++;
@@ -133,7 +149,6 @@ void WiFiEvent(WiFiEvent_t event) {
 
 	switch(event) {
 	case SYSTEM_EVENT_STA_GOT_IP:
-		digitalWrite(LED_BUILTIN, !LED_ON);
 		Serial.print("IP address: \t");
 		Serial.println(WiFi.localIP());
 		localIp = WiFi.localIP().toString().c_str();
@@ -147,7 +162,6 @@ void WiFiEvent(WiFiEvent_t event) {
 		wifiRetryAttempts = 0;
 		break;
 	case SYSTEM_EVENT_STA_DISCONNECTED:
-		digitalWrite(LED_BUILTIN, LED_ON);
 		Serial.println("WiFi lost connection, resetting timer\t");
 		handleWifiDisconnect();
 		break;
@@ -181,7 +195,12 @@ bool sendTelemetry() {
 	tele["hostname"] = WiFi.getHostname();
 	tele["scan_dur"] = scanTime;
 	tele["wait_dur"] = waitTime;
-
+	preferences.begin(wifi_prefs, false);
+	uint16_t wiFiRestartCounter = preferences.getShort("wifi_reconnect", 0);
+	preferences.end();
+	if (wiFiRestartCounter > 0) {
+		tele["wifi_restart_count"] = wiFiRestartCounter;
+	}
 	char teleMessageBuffer[258];
 	serializeJson(tele, teleMessageBuffer);
 
@@ -357,6 +376,7 @@ void sendBlePayload(char* mqttMessage, size_t commandLength) {
 						&& pRemoteCharacteristic->writeValue(command2, len2, true)
 						) {
 							Serial.println("Write successful.");
+							error = "";
 							result = true;
 						} else {
 							error = "FAILED TO WRITE";
@@ -414,6 +434,7 @@ class AirbnkAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
 
 void onMqttConnect(bool sessionPresent) {
   	Serial.println("Connected to MQTT.");
+	digitalWrite(LED_BUILTIN, !LED_ON);
 	mqttRetryAttempts = 0;
 	
 	if (mqttClient.publish(availabilityTopic.c_str(), 0, 1, "CONNECTED") == true) {
@@ -438,6 +459,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
 	Serial.println("Disconnected from MQTT.");
+	digitalWrite(LED_BUILTIN, LED_ON);
 	handleMqttDisconnect();
 }
 
@@ -549,7 +571,7 @@ void mainSetup() {
   	NimBLEDevice::init("");
 	NimBLEDevice::setPower(ESP_PWR_LVL_P9);
 	pClient = NimBLEDevice::createClient();
-  	pBLEScan = NimBLEDevice::getScan(); //create new scan
+  	pBLEScan = NimBLEDevice::getScan();
 	pBLEScan->setAdvertisedDeviceCallbacks(new AirbnkAdvertisedDeviceCallbacks());
 	pBLEScan->setInterval(bleScanInterval);
 	pBLEScan->setWindow(bleScanWindow);
@@ -567,8 +589,14 @@ void mainSetup() {
 
 	// Send a GET request to <ESP_IP>/get?input1=<inputMessage>
 	server.on("/reset", HTTP_GET, [] (AsyncWebServerRequest *request) {
+		preferences.begin(main_prefs, false);
 		preferences.clear();
+		preferences.end();
+		preferences.begin(wifi_prefs, false);
+		preferences.clear();
+		preferences.end();
 		request->send(200, "text/html", confirm_html);
+		digitalWrite(LED_BUILTIN, LED_ON);
 		delay(3000);
 		ESP.restart();
 	});
@@ -603,7 +631,7 @@ void configSetup() {
 		String mqtt_pass_param = request->getParam(PARAM_INPUT_6)->value();
 		String mqtt_topic_param = request->getParam(PARAM_INPUT_7)->value();
 		String lock_mac_param = request->getParam(PARAM_INPUT_8)->value();
-
+		preferences.begin(main_prefs, false);
 		preferences.clear();
 		preferences.putString(wifi_ssid_pref, wifi_ssid_param);
 		preferences.putString(wifi_pwd_pref, wifi_pwd_param);
@@ -613,6 +641,10 @@ void configSetup() {
 		preferences.putString(mqtt_pass_pref, mqtt_pass_param);
 		preferences.putString(mqtt_topic_pref, mqtt_topic_param);
 		preferences.putString(lock_mac_pref, lock_mac_param);
+		preferences.end();
+		preferences.begin(wifi_prefs, false);
+		preferences.clear();
+		preferences.end();
 
 		request->send(200, "text/html", confirm_html);
 		delay(3000);
@@ -623,6 +655,7 @@ void configSetup() {
 }
 
 bool readPrefs() {
+	preferences.begin(main_prefs, true);
 	wifi_ssid = preferences.getString(wifi_ssid_pref);
 	wifi_pwd = preferences.getString(wifi_pwd_pref);
 	mqtt_ip = preferences.getString(mqtt_ip_pref);
@@ -631,6 +664,7 @@ bool readPrefs() {
 	mqtt_pass = preferences.getString(mqtt_pass_pref);
 	mqtt_topic = preferences.getString(mqtt_topic_pref);
 	lock_mac = preferences.getString(lock_mac_pref);
+	preferences.end();
 
 	advertTopic = mqtt_topic + "/adv";
 	commandResultTopic = mqtt_topic + "/command_result";
@@ -647,7 +681,6 @@ bool readPrefs() {
 
 void setup() {
 	Serial.begin(115200);
-	preferences.begin("airbnk_prefs", false);
 	isSetUp = readPrefs();
 	if (isSetUp) {
 	  	mainSetup();
