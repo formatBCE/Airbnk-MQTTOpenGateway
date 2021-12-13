@@ -1,4 +1,5 @@
 
+#define version "1.0.1"
 #define ap_ssid "AirbnkOpenGateway"
 
 #define main_prefs "airbnk_prefs"
@@ -18,6 +19,7 @@
 
 #define serviceUUID "0xFFF0"
 #define characteristicUUID "0xFFF2"
+#define statusCharacteristicUUID "0xFFF3"
 
 #define scanInterval 0 // Define the interval in seconds between scans
 #define singleScanTime 10 // Define the duration of a single scan in seconds

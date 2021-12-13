@@ -10,6 +10,7 @@ extern "C" {
 #include <AsyncTCP.h>
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
+#include <AsyncElegantOTA.h>
 #include <Preferences.h>
 
 #include <NimBLEDevice.h>
@@ -259,12 +260,13 @@ bool reportDevice(NimBLEAdvertisedDevice advertisedDevice) {
 	return false;
 }
 
-void sendCommandResult(boolean success, String error, int sign) {
+void sendCommandResult(boolean success, String error, int sign, std::string status) {
 	StaticJsonDocument<128> doc;
 	doc["success"] = success;
 	doc["error"] = error;
 	doc["sign"] = sign;
 	doc["mac"] = lock_mac;
+	doc["lockStatus"] = status.c_str();
 	char messageBuffer[130];
 	serializeJson(doc, messageBuffer);
 
@@ -323,6 +325,20 @@ int fromHex(uint8_t *dest, const char *src, int maxlen) {
   return srclen;
 }
 
+char const hex[16] = {'0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F'};
+
+std::string toHex(std::string status) {
+	char* bytes = (char *)status.c_str();
+	int size = 20;
+	std::string str;
+	for (int i = 0; i < size; ++i) {
+		const char ch = bytes[i];
+		str.append(&hex[(ch  & 0xF0) >> 4], 1);
+		str.append(&hex[ch & 0xF], 1);
+	}
+	return str;
+}
+
 
 void sendBlePayload(char* mqttMessage, size_t commandLength) {
 	isSending = true;
@@ -334,6 +350,7 @@ void sendBlePayload(char* mqttMessage, size_t commandLength) {
 	}
 	bool result = false;
 	String error = "";
+	std::string status = "";
 	char pldArr[commandLength];
 	strcpy(pldArr, mqttMessage);
 	Serial.println(pldArr);
@@ -375,9 +392,27 @@ void sendBlePayload(char* mqttMessage, size_t commandLength) {
 						pRemoteCharacteristic->writeValue(command1, len1, true)
 						&& pRemoteCharacteristic->writeValue(command2, len2, true)
 						) {
-							Serial.println("Write successful.");
-							error = "";
-							result = true;
+							Serial.println("Write successful, reading status.");
+							uint16_t statusCharactUuid = strtol(statusCharacteristicUUID, NULL, 0);
+							NimBLERemoteCharacteristic* pStatusCharacteristic = pRemoteService->getCharacteristic(NimBLEUUID(statusCharactUuid));
+							if (pStatusCharacteristic == nullptr) {
+								Serial.println("Failed to get sttaus characteristic.");
+								error = "FAILED TO GET STATUS CHARACTERISTIC";
+							} else {
+								time_t timestamp = (time_t) 0;
+								std::string readStatus = pStatusCharacteristic->readValue(&timestamp);
+								if (readStatus.empty()) {
+									error = "FAILED TO READ STATUS";
+									Serial.println("Failed to read status characteristic.");
+								} else {
+									Serial.println("Read status successful.");
+									error = "";
+									result = true;
+									status = toHex(readStatus);
+									Serial.println(status.c_str());
+								}
+								pStatusCharacteristic = NULL;
+							}
 						} else {
 							error = "FAILED TO WRITE";
 							Serial.println("Failed to write characteristic.");
@@ -394,7 +429,7 @@ void sendBlePayload(char* mqttMessage, size_t commandLength) {
 		retry++;
 	}
 	isSending = false;
-	sendCommandResult(result, error, sign);
+	sendCommandResult(result, error, sign, status);
 }
 
 void scanForDevices(void * parameter) {
@@ -463,9 +498,34 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
 	handleMqttDisconnect();
 }
 
+String processor(const String& var) {
+	if (var == "VERSION") {
+		return String(version);
+	}
+	if (var == "WIFI") {
+		return wifi_ssid;
+	}
+	if (var == "MQTT_IP") {
+		return mqtt_ip;
+	}
+	if (var == "MQTT_PORT") {
+		return String(mqtt_port);
+	}
+	if (var == "MQTT_USER") {
+		return mqtt_user;
+	}
+	if (var == "MQTT_TOPIC") {
+		return mqtt_topic;
+	}
+	if (var == "LOCK_MAC") {
+		return lock_mac;
+	}
+	return String();
+}
+
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html><head>
-<title>Airbnk Gateway configuration</title>
+<title>Airbnk Gateway %VERSION%</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style> 
 input[type=submit] {
@@ -479,8 +539,13 @@ input[type=submit] {
 }
 </style>
 </head><body>
-<h1 style="color: #5e9ca0;">Airbnk Gateway Configuration</h1>
+<h1 style="color: #5e9ca0;">Airbnk Gateway %VERSION%</h1>
 <h4>by @formatBCE</h4>
+<form action="/update">
+<p><input type="submit" value="Update firmware" /></p>
+</form>
+<h4>&nbsp;</h4>
+<h4>CONFIGURATION</h4>
 <p>Insert required data into fields below, and save configuration.</p>
 <p>Gateway will reboot and connect to your WiFi and MQTT automatically.&nbsp;</p>
 <p><span style="color: #ff0000;"><strong>PLEASE DOUBLE-CHECK ENTERED DATA BEFORE SAVING!</strong></span></p>
@@ -503,7 +568,7 @@ input[type=submit] {
 </body></html>)rawliteral";
 const char reset_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html><head>
-<title>Airbnk Gateway configuration</title>
+<title>Airbnk Gateway %VERSION%</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style> 
 input[type=submit] {
@@ -517,8 +582,21 @@ input[type=submit] {
 }
 </style>
 </head><body>
-<h1 style="color: #5e9ca0;">Airbnk Gateway Configuration</h1>
+<h1 style="color: #5e9ca0;">Airbnk Gateway %VERSION%</h1>
 <h4>by @formatBCE</h4>
+<form action="/update">
+<p><input type="submit" value="Update firmware" /></p>
+</form>
+<h4>&nbsp;</h4>
+<h4>CURRENT CONFIGURATION</h4>
+<p>WiFi SSID: %WIFI%</p>
+<p>MQTT IP: %MQTT_IP%</p>
+<p>MQTT port: %MQTT_PORT%</p>
+<p>MQTT user: %MQTT_USER%</p>
+<p>MQTT root topic: %MQTT_TOPIC%</p>
+<p>Lock MAC address: %LOCK_MAC%</p>
+<h4>&nbsp;</h4>
+<h4>RESET CONFIGURATION</h4>
 <p>You may reset gateway configuration on this page.</p>
 <p>WiFi access point "AirbnkOpenGateway will appear.</p>
 <p>Connect to it, and configure gateway again.</p>
@@ -529,10 +607,10 @@ input[type=submit] {
 </body></html>)rawliteral";
 const char confirm_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html><head>
-<title>Airbnk Gateway configuration</title>
+<title>Airbnk Gateway %VERSION%</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 </head><body>
-<h1 style="color: #5e9ca0;">Airbnk Gateway Configuration</h1>
+<h1 style="color: #5e9ca0;">Airbnk Gateway %VERSION%</h1>
 <h4>by @formatBCE</h4>
 <p>Configuration saved, device restarted. You may close this page now.</p>
 </body></html>)rawliteral";
@@ -584,10 +662,9 @@ void mainSetup() {
 		&NimBLEScan,
 		1);
 	server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-		request->send_P(200, "text/html", reset_html);
+		request->send_P(200, "text/html", reset_html, processor);
 	});
 
-	// Send a GET request to <ESP_IP>/get?input1=<inputMessage>
 	server.on("/reset", HTTP_GET, [] (AsyncWebServerRequest *request) {
 		preferences.begin(main_prefs, false);
 		preferences.clear();
@@ -595,12 +672,13 @@ void mainSetup() {
 		preferences.begin(wifi_prefs, false);
 		preferences.clear();
 		preferences.end();
-		request->send(200, "text/html", confirm_html);
+		request->send_P(200, "text/html", confirm_html, processor);
 		digitalWrite(LED_BUILTIN, LED_ON);
 		delay(3000);
 		ESP.restart();
 	});
 	server.onNotFound(notFound);
+	AsyncElegantOTA.begin(&server);
 	server.begin();
 }
 
@@ -618,7 +696,7 @@ void configSetup() {
   	Serial.println(IP);
   	// Send web page with input fields to client
 	server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-		request->send_P(200, "text/html", index_html);
+		request->send_P(200, "text/html", index_html, processor);
 	});
 
 	// Send a GET request to <ESP_IP>/get?input1=<inputMessage>
@@ -646,11 +724,12 @@ void configSetup() {
 		preferences.clear();
 		preferences.end();
 
-		request->send(200, "text/html", confirm_html);
+		request->send_P(200, "text/html", confirm_html, processor);
 		delay(3000);
 		ESP.restart();
 	});
 	server.onNotFound(notFound);
+	AsyncElegantOTA.begin(&server);
 	server.begin();
 }
 
