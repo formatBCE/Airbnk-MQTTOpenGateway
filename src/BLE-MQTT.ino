@@ -397,20 +397,26 @@ void sendBlePayload(char* mqttMessage, size_t commandLength) {
 							uint16_t statusCharactUuid = strtol(statusCharacteristicUUID, NULL, 0);
 							NimBLERemoteCharacteristic* pStatusCharacteristic = pRemoteService->getCharacteristic(NimBLEUUID(statusCharactUuid));
 							if (pStatusCharacteristic == nullptr) {
-								Serial.println("Failed to get sttaus characteristic.");
+								Serial.println("Failed to get status characteristic.");
 								error = "FAILED TO GET STATUS CHARACTERISTIC";
 							} else {
 								time_t timestamp = (time_t) 0;
-								std::string readStatus = pStatusCharacteristic->readValue(&timestamp);
-								if (readStatus.empty()) {
-									error = "FAILED TO READ STATUS";
-									Serial.println("Failed to read status characteristic.");
-								} else {
-									Serial.println("Read status successful.");
-									error = "";
-									result = true;
-									status = toHex(readStatus);
-									Serial.println(status.c_str());
+								int tries = 5;
+								while (tries > 0 && (status.empty() || (0 == status.compare(status.length() - 2, 2, "00")))) {
+									std::string readStatus = pStatusCharacteristic->readValue(&timestamp);
+									if (readStatus.empty()) {
+										tries = 0;
+										error = "FAILED TO READ STATUS";
+										Serial.println("Failed to read status characteristic.");
+									} else {
+										Serial.println("Read status successful.");
+										error = "";
+										result = true;
+										status = toHex(readStatus);
+										Serial.println(status.c_str());
+									}
+									tries--;
+									delay(200);
 								}
 								pStatusCharacteristic = NULL;
 							}
