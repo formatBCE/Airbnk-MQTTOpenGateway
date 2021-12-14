@@ -10,7 +10,7 @@ extern "C" {
 #include <AsyncTCP.h>
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
-#include <AsyncElegantOTA.h>
+#include <Update.h>
 #include <Preferences.h>
 
 #include <NimBLEDevice.h>
@@ -25,6 +25,7 @@ extern "C" {
 
 // Config fields
 AsyncWebServer server(80);
+size_t content_len;
 Preferences preferences;
 bool isSetUp = false;
 
@@ -523,106 +524,6 @@ String processor(const String& var) {
 	return String();
 }
 
-const char index_html[] PROGMEM = R"rawliteral(
-<!DOCTYPE HTML><html><head>
-<title>Airbnk Gateway %VERSION%</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style> 
-input[type=submit] {
-  background-color: #5e9ca0;
-  border: none;
-  color: white;
-  padding: 16px 32px;
-  text-decoration: none;
-  margin: 4px 2px;
-  cursor: pointer;
-}
-</style>
-</head><body>
-<h1 style="color: #5e9ca0;">Airbnk Gateway %VERSION%</h1>
-<h4>by @formatBCE</h4>
-<form action="/update">
-<p><input type="submit" value="Update firmware" /></p>
-</form>
-<h4>&nbsp;</h4>
-<h4>CONFIGURATION</h4>
-<p>Insert required data into fields below, and save configuration.</p>
-<p>Gateway will reboot and connect to your WiFi and MQTT automatically.&nbsp;</p>
-<p><span style="color: #ff0000;"><strong>PLEASE DOUBLE-CHECK ENTERED DATA BEFORE SAVING!</strong></span></p>
-<p>After saving, there will be no way to change them.</p>
-<p>&nbsp;</p>
-<form action="/config">
-<p><strong>WiFi (2.4 GHz)</strong></p>
-<p>SSID: <input name="input1" type="text" /></p>
-<p>Password: <input name="input2" type="text" /></p>
-<p><strong>MQTT</strong></p>
-<p>Broker IP: <input name="input3" type="text" value="192.168.0.1" /></p>
-<p>Broker port: <input name="input4" type="number" value="1883" /></p>
-<p>User: <input name="input5" type="text" /></p>
-<p>Password: <input name="input6" type="text" /></p>
-<p>Root topic: <input name="input7" type="text" value="airbnk_lock" /></p>
-<p><strong>Target lock</strong></p>
-<p>MAC address: <input name="input8" type="text" value="12:34:56:78:90:AB" /></p>
-<p><input type="submit" value="Save and reboot" /></p>
-</form>
-</body></html>)rawliteral";
-const char reset_html[] PROGMEM = R"rawliteral(
-<!DOCTYPE HTML><html><head>
-<title>Airbnk Gateway %VERSION%</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style> 
-input[type=submit] {
-  background-color: #5e9ca0;
-  border: none;
-  color: white;
-  padding: 16px 32px;
-  text-decoration: none;
-  margin: 4px 2px;
-  cursor: pointer;
-}
-</style>
-</head><body>
-<h1 style="color: #5e9ca0;">Airbnk Gateway %VERSION%</h1>
-<h4>by @formatBCE</h4>
-<form action="/update">
-<p><input type="submit" value="Update firmware" /></p>
-</form>
-<h4>&nbsp;</h4>
-<h4>CURRENT CONFIGURATION</h4>
-<p>WiFi SSID: %WIFI%</p>
-<p>MQTT IP: %MQTT_IP%</p>
-<p>MQTT port: %MQTT_PORT%</p>
-<p>MQTT user: %MQTT_USER%</p>
-<p>MQTT root topic: %MQTT_TOPIC%</p>
-<p>Lock MAC address: %LOCK_MAC%</p>
-<h4>&nbsp;</h4>
-<h4>RESET CONFIGURATION</h4>
-<p>You may reset gateway configuration on this page.</p>
-<p>WiFi access point "AirbnkOpenGateway will appear.</p>
-<p>Connect to it, and configure gateway again.</p>
-<p>&nbsp;</p>
-<form action="/reset">
-<p><input type="submit" value="Reset configuration and restart" /></p>
-</form>
-</body></html>)rawliteral";
-const char confirm_html[] PROGMEM = R"rawliteral(
-<!DOCTYPE HTML><html><head>
-<title>Airbnk Gateway %VERSION%</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-</head><body>
-<h1 style="color: #5e9ca0;">Airbnk Gateway %VERSION%</h1>
-<h4>by @formatBCE</h4>
-<p>Configuration saved, device restarted. You may close this page now.</p>
-</body></html>)rawliteral";
-const char* PARAM_INPUT_1 = "input1";
-const char* PARAM_INPUT_2 = "input2";
-const char* PARAM_INPUT_3 = "input3";
-const char* PARAM_INPUT_4 = "input4";
-const char* PARAM_INPUT_5 = "input5";
-const char* PARAM_INPUT_6 = "input6";
-const char* PARAM_INPUT_7 = "input7";
-const char* PARAM_INPUT_8 = "input8";
-
 void notFound(AsyncWebServerRequest *request) {
   request->send(404, "text/plain", "Not found");
 }
@@ -661,10 +562,9 @@ void mainSetup() {
 		1,
 		&NimBLEScan,
 		1);
-	server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+	server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
 		request->send_P(200, "text/html", reset_html, processor);
 	});
-
 	server.on("/reset", HTTP_GET, [] (AsyncWebServerRequest *request) {
 		preferences.begin(main_prefs, false);
 		preferences.clear();
@@ -677,9 +577,6 @@ void mainSetup() {
 		delay(3000);
 		ESP.restart();
 	});
-	server.onNotFound(notFound);
-	AsyncElegantOTA.begin(&server);
-	server.begin();
 }
 
 void mainLoop() {
@@ -728,9 +625,6 @@ void configSetup() {
 		delay(3000);
 		ESP.restart();
 	});
-	server.onNotFound(notFound);
-	AsyncElegantOTA.begin(&server);
-	server.begin();
 }
 
 bool readPrefs() {
@@ -758,6 +652,38 @@ bool readPrefs() {
 		&& lock_mac != "";
 }
 
+void handleUpdate(AsyncWebServerRequest *request) {
+  request->send(200, "text/html", update_html);
+}
+
+void handleDoUpdate(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) {
+	if (!index){
+		Serial.println("Update");
+		content_len = request->contentLength();
+		if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH)) {
+			Update.printError(Serial);
+		}
+	}
+
+	if (Update.write(data, len) != len) {
+		Update.printError(Serial);
+	}
+
+	if (final) {
+		if (!Update.end(true)){
+			Update.printError(Serial);
+		} else {
+			Serial.println("Update complete");
+			Serial.flush();
+			ESP.restart();
+		}
+	}
+}
+
+void printProgress(size_t prg, size_t sz) {
+  	Serial.printf("Progress: %d%%\n", (prg*100)/content_len);
+}
+
 void setup() {
 	Serial.begin(115200);
 	isSetUp = readPrefs();
@@ -766,6 +692,17 @@ void setup() {
 	} else {
 		configSetup();
 	}
+	server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request){handleUpdate(request);});
+	server.on("/doUpdate", HTTP_POST,
+		[](AsyncWebServerRequest *request) {},
+		[](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data,
+					size_t len, bool final) {
+							handleDoUpdate(request, filename, index, data, len, final);
+						}
+	);
+	server.onNotFound(notFound);
+	server.begin();
+	Update.onProgress(printProgress);
 }
 
 void loop() {
