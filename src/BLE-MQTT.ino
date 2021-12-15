@@ -404,7 +404,7 @@ void sendBlePayload(char* mqttMessage, size_t commandLength) {
 								int tries = 10;
 								while (tries > 0 && (status.empty() || (0 == status.compare(status.length() - 2, 2, "00")))) {
 									if (tries < 10) {
-										delay(200);
+										delay(500);
 									}
 									std::string readStatus = pStatusCharacteristic->readValue(&timestamp);
 									if (readStatus.empty()) {

@@ -1,5 +1,5 @@
 
-#define version "1.0.3"
+#define version "1.0.4"
 #define ap_ssid "AirbnkOpenGateway"
 
 #define main_prefs "airbnk_prefs"
