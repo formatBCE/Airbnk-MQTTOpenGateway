@@ -401,8 +401,11 @@ void sendBlePayload(char* mqttMessage, size_t commandLength) {
 								error = "FAILED TO GET STATUS CHARACTERISTIC";
 							} else {
 								time_t timestamp = (time_t) 0;
-								int tries = 5;
+								int tries = 10;
 								while (tries > 0 && (status.empty() || (0 == status.compare(status.length() - 2, 2, "00")))) {
+									if (tries < 10) {
+										delay(200);
+									}
 									std::string readStatus = pStatusCharacteristic->readValue(&timestamp);
 									if (readStatus.empty()) {
 										tries = 0;
@@ -416,7 +419,6 @@ void sendBlePayload(char* mqttMessage, size_t commandLength) {
 										Serial.println(status.c_str());
 									}
 									tries--;
-									delay(200);
 								}
 								pStatusCharacteristic = NULL;
 							}
