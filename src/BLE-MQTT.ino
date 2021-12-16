@@ -109,21 +109,7 @@ bool handleWifiDisconnect() {
 	delay(500);
 	digitalWrite(LED_BUILTIN, LED_ON);
 	if (wifiRetryAttempts > 10) {
-		preferences.begin(wifi_prefs, false);
-		uint16_t wiFiRestartCounter = preferences.getShort("wifi_reconnect", 0);
-		if (wiFiRestartCounter > 9) {
-			preferences.clear();
-			preferences.end();
-			preferences.begin(main_prefs, false);
-			preferences.clear();
-			preferences.end();
-			Serial.println("Too many retries. Cleaning data and restarting.");
-		} else {
-			wiFiRestartCounter++;
-			preferences.putShort("wifi_reconnect", wiFiRestartCounter);
-			preferences.end();
-			Serial.println("Too many retries. Restarting.");
-		}
+		Serial.println("Too many retries. Restarting.");
 		ESP.restart();
 	} else {
 		wifiRetryAttempts++;
@@ -162,9 +148,6 @@ void WiFiEvent(WiFiEvent_t event) {
 			xTimerStop(wifiReconnectTimer, 0);
 		}
 		wifiRetryAttempts = 0;
-		preferences.begin(wifi_prefs, false);
-		preferences.clear();
-		preferences.end();
 		break;
 	case SYSTEM_EVENT_STA_DISCONNECTED:
 		Serial.println("WiFi lost connection, resetting timer\t");
@@ -200,12 +183,6 @@ bool sendTelemetry() {
 	tele["hostname"] = WiFi.getHostname();
 	tele["scan_dur"] = scanTime;
 	tele["wait_dur"] = waitTime;
-	preferences.begin(wifi_prefs, false);
-	uint16_t wiFiRestartCounter = preferences.getShort("wifi_reconnect", 0);
-	preferences.end();
-	if (wiFiRestartCounter > 0) {
-		tele["wifi_restart_count"] = wiFiRestartCounter;
-	}
 	char teleMessageBuffer[258];
 	serializeJson(tele, teleMessageBuffer);
 
@@ -581,9 +558,6 @@ void mainSetup() {
 		preferences.begin(main_prefs, false);
 		preferences.clear();
 		preferences.end();
-		preferences.begin(wifi_prefs, false);
-		preferences.clear();
-		preferences.end();
 		request->send_P(200, "text/html", confirm_html, processor);
 		digitalWrite(LED_BUILTIN, LED_ON);
 		delay(3000);
@@ -628,9 +602,6 @@ void configSetup() {
 		preferences.putString(mqtt_pass_pref, mqtt_pass_param);
 		preferences.putString(mqtt_topic_pref, mqtt_topic_param);
 		preferences.putString(lock_mac_pref, lock_mac_param);
-		preferences.end();
-		preferences.begin(wifi_prefs, false);
-		preferences.clear();
 		preferences.end();
 
 		request->send_P(200, "text/html", confirm_html, processor);

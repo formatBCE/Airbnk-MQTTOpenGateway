@@ -1,9 +1,8 @@
 
-#define version "1.0.5"
+#define version "1.0.6"
 #define ap_ssid "AirbnkOpenGateway"
 
 #define main_prefs "airbnk_prefs"
-#define wifi_prefs "wifi_prefs"
 
 #define wifi_ssid_pref "wifi_ssid"
 #define wifi_pwd_pref "wifi_pwd"
