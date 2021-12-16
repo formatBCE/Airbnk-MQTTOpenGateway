@@ -111,7 +111,7 @@ bool handleWifiDisconnect() {
 	if (wifiRetryAttempts > 10) {
 		preferences.begin(wifi_prefs, false);
 		uint16_t wiFiRestartCounter = preferences.getShort("wifi_reconnect", 0);
-		if (wiFiRestartCounter > 4) {
+		if (wiFiRestartCounter > 9) {
 			preferences.clear();
 			preferences.end();
 			preferences.begin(main_prefs, false);
@@ -162,6 +162,9 @@ void WiFiEvent(WiFiEvent_t event) {
 			xTimerStop(wifiReconnectTimer, 0);
 		}
 		wifiRetryAttempts = 0;
+		preferences.begin(wifi_prefs, false);
+		preferences.clear();
+		preferences.end();
 		break;
 	case SYSTEM_EVENT_STA_DISCONNECTED:
 		Serial.println("WiFi lost connection, resetting timer\t");
@@ -211,6 +214,7 @@ bool sendTelemetry() {
 		return true;
 	} else {
 		Serial.println("Error sending telemetry");
+		mqttClient.disconnect();
 		return false;
 	}
 }
@@ -246,6 +250,7 @@ bool reportDevice(NimBLEAdvertisedDevice advertisedDevice) {
 			Serial.println(advertTopic);
 			Serial.print("Message: ");
 			Serial.println(JSONmessageBuffer);
+			mqttClient.disconnect();
 			return false;
 		}
 	} else {
@@ -275,6 +280,7 @@ void sendCommandResult(boolean success, String error, int sign, std::string stat
 		Serial.println("Command result sent");
 	} else {
 		Serial.println("Error sending command result");
+		mqttClient.disconnect();
 	}
 }
 
@@ -343,11 +349,9 @@ std::string toHex(std::string status) {
 
 void sendBlePayload(char* mqttMessage, size_t commandLength) {
 	isSending = true;
-	if (pBLEScan->isScanning()) {
-		pBLEScan->stop();
-		while (pBLEScan->isScanning()) {
-			delay(100);
-		}
+	pBLEScan->stop();
+	while (pBLEScan->isScanning()) {
+		delay(100);
 	}
 	bool result = false;
 	String error = "";
@@ -403,8 +407,8 @@ void sendBlePayload(char* mqttMessage, size_t commandLength) {
 								time_t timestamp = (time_t) 0;
 								int tries = 10;
 								while (tries > 0 && (status.empty() || (0 == status.compare(status.length() - 2, 2, "00")))) {
-									if (tries < 10) {
-										delay(500);
+									if (tries > 0) {
+										delay(700);
 									}
 									std::string readStatus = pStatusCharacteristic->readValue(&timestamp);
 									if (readStatus.empty()) {
@@ -485,11 +489,11 @@ void onMqttConnect(bool sessionPresent) {
 		Serial.print("Success sending message to topic:\t");
 		Serial.println(availabilityTopic);
 		mqttClient.subscribe(commandTopic.c_str(), 2);
+		sendTelemetry();
 	} else {
 		Serial.println("Error sending message");
+		mqttClient.disconnect();
 	}
-
-	sendTelemetry();
 }
 
 void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
