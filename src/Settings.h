@@ -1,5 +1,5 @@
 
-#define version "1.0.6"
+#define version "1.0.7"
 #define ap_ssid "AirbnkOpenGateway"
 
 #define main_prefs "airbnk_prefs"
@@ -12,6 +12,8 @@
 #define mqtt_pass_pref "mqtt_pass"
 #define mqtt_topic_pref "mqtt_topic"
 #define lock_mac_pref "lock_mac"
+#define manual_reset_pref "m_res"
+#define manual_reset_count_pref "m_res_c"
 
 #define LED_BUILTIN 2
 #define LED_ON 0
@@ -105,14 +107,23 @@ input[type=submit] {
 <p><input type="submit" value="Reset configuration and restart" /></p>
 </form>
 </body></html>)rawliteral";
-const char confirm_html[] PROGMEM = R"rawliteral(
+const char config_confirm_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html><head>
 <title>Airbnk Gateway %VERSION%</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 </head><body>
 <h1 style="color: #5e9ca0;">Airbnk Gateway %VERSION%</h1>
 <h4>by @formatBCE</h4>
-<p>Configuration saved, device restarted. You may close this page now.</p>
+<p>Configuration saved, device restarted. Connect to your WiFi and go to <a href="http://%WIFI_IP%" target="_blank">http://%WIFI_IP%</a> to visit main page.</p>
+</body></html>)rawliteral";
+const char reset_confirm_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE HTML><html><head>
+<title>Airbnk Gateway %VERSION%</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head><body>
+<h1 style="color: #5e9ca0;">Airbnk Gateway %VERSION%</h1>
+<h4>by @formatBCE</h4>
+<p>Configuration reset, device restarted. Connect to AirbnkOpenGateway WiFi and navigate to <a href="http://192.168.4.1" target="_blank">http://192.168.4.1</a> to configure device.</p>
 </body></html>)rawliteral";
 const char* PARAM_INPUT_1 = "input1";
 const char* PARAM_INPUT_2 = "input2";

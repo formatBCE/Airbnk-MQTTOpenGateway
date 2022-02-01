@@ -181,8 +181,6 @@ bool sendTelemetry() {
 	StaticJsonDocument<256> tele;
 	tele["ip"] = localIp;
 	tele["hostname"] = WiFi.getHostname();
-	tele["scan_dur"] = scanTime;
-	tele["wait_dur"] = waitTime;
 	char teleMessageBuffer[258];
 	serializeJson(tele, teleMessageBuffer);
 
@@ -428,9 +426,9 @@ void scanForDevices(void * parameter) {
 			delay(10);
 		}
 		if (WiFi.isConnected() && (millis() - last > (waitTime * 1000) || last == 0)) {
-			Serial.println("Scanning...\t");
+			Serial.println("Scanning...");
 			pBLEScan->start(scanTime);
-			Serial.print("Scanning done.");
+			Serial.println("Scanning done.");
 			pBLEScan->clearResults();
 			sendTelemetry();
 			last = millis();
@@ -510,6 +508,9 @@ String processor(const String& var) {
 	if (var == "LOCK_MAC") {
 		return lock_mac;
 	}
+	if (var == "WIFI_IP") {
+		return localIp;
+	}
 	return String();
 }
 
@@ -555,14 +556,18 @@ void mainSetup() {
 		request->send_P(200, "text/html", reset_html, processor);
 	});
 	server.on("/reset", HTTP_GET, [] (AsyncWebServerRequest *request) {
-		preferences.begin(main_prefs, false);
-		preferences.clear();
-		preferences.end();
-		request->send_P(200, "text/html", confirm_html, processor);
+		resetConfig();
+		request->send_P(200, "text/html", reset_confirm_html, processor);
 		digitalWrite(LED_BUILTIN, LED_ON);
 		delay(3000);
 		ESP.restart();
 	});
+}
+
+void resetConfig() {
+	preferences.begin(main_prefs, false);
+	preferences.clear();
+	preferences.end();
 }
 
 void mainLoop() {
@@ -603,11 +608,24 @@ void configSetup() {
 		preferences.putString(mqtt_topic_pref, mqtt_topic_param);
 		preferences.putString(lock_mac_pref, lock_mac_param);
 		preferences.end();
+		getConfigLocalIp(wifi_ssid_param, wifi_pwd_param);
 
-		request->send_P(200, "text/html", confirm_html, processor);
+		request->send_P(200, "text/html", config_confirm_html, processor);
 		delay(3000);
 		ESP.restart();
 	});
+}
+
+void getConfigLocalIp(String ssid, String pwd) {
+  	Serial.println("Connecting to WiFi...");
+	WiFi.begin(ssid.c_str(), pwd.c_str());
+	int32_t counter = 0;
+	while (WiFi.status() != WL_CONNECTED && counter < 10) {
+  		delay(500);
+  		Serial.println("Checking WiFi..");
+		  counter += 1;
+	}
+	localIp = WiFi.localIP().toString().c_str();
 }
 
 bool readPrefs() {
@@ -671,6 +689,7 @@ void setup() {
 	Serial.begin(115200);
 	isSetUp = readPrefs();
 	if (isSetUp) {
+		checkManualReset();
 	  	mainSetup();
 	} else {
 		configSetup();
@@ -692,4 +711,39 @@ void loop() {
 	if (isSetUp) {
 		mainLoop();
 	}
+	if (millis() > 5000) {
+		setNoManualReset();
+	}
+}
+
+void checkManualReset() {
+	preferences.begin(main_prefs, false);
+	if (preferences.getInt(manual_reset_pref, 0) != 0) {
+		int32_t resetCount = preferences.getInt(manual_reset_count_pref, 0) + 1;
+		if (resetCount > 2) {
+			preferences.putInt(manual_reset_count_pref, 0);
+			preferences.end();
+			Serial.println("Manual power reset detected, erasing config!");
+			resetConfig();
+			ESP.restart();
+		} else {
+			Serial.print("Manual power reset detected (");
+			Serial.print(resetCount + 1);
+			Serial.println(" of 4).");
+			preferences.putInt(manual_reset_count_pref, resetCount);
+			preferences.end();
+		}
+	} else {
+		preferences.putInt(manual_reset_pref, 1);
+	}
+}
+
+void setNoManualReset() {
+	preferences.begin(main_prefs, false);
+	if (preferences.getInt(manual_reset_pref, 0) != 0) {
+		Serial.println("Did not detect power off within 5 sec, skipping config reset.");
+		preferences.putInt(manual_reset_pref, 0);
+		preferences.putInt(manual_reset_count_pref, 0);
+	}
+	preferences.end();
 }
