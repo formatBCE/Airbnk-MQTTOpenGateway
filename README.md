@@ -10,7 +10,7 @@ Use https://github.com/formatBCE/Airbnk-MQTTOpenGateway/blob/main/partitions_sin
 2. Place chip near the lock and power it up. Make sure you use good power adapter!
 
 3. Go find new WiFi network, named "AirbnkOpenGateway".
-Connect to it from your PC/phone, and go to http://102.168.4.1 in your browser.
+Connect to it from your PC/phone, and go to http://192.168.4.1 in your browser.
 
 4. Configure gateway according to your environment.
 Make sure you did type everything correctly before saving configuration.
