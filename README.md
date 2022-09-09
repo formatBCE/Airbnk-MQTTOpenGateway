@@ -1,7 +1,26 @@
 # Airbnk-MQTTOpenGateway
-Gateway to use Airbnk locks with HA custom integration https://github.com/rospogrigio/airbnk_mqtt
+### Gateway to use Airbnk locks with Home Assistant custom integration https://github.com/rospogrigio/airbnk_mqtt
 
-How to use it:
+# Usage
+
+## [ESPHome](https://esphome.io/) (Recommended)
+
+* TIP: If you're updating from custom firmware, you may use ESPHome manual installation option (choose "Legacy" on export step) and update via OTA.
+
+1. Create new device configuration in ESPHome for ESP32.
+
+2. After initial configuration (you may skip connect/install steps), create file airbnk-gateway.h in config/esphome directory.
+
+3. Paste contents of [airbnk-gateway.h](https://github.com/formatBCE/Airbnk-MQTTOpenGateway/blob/main/src/esphome/airbnk-gateway.h) to created file.
+
+4. In main device config yaml, make changes according to [template](https://github.com/formatBCE/Airbnk-MQTTOpenGateway/blob/main/src/esphome/esphome_gateway_template).
+(Pay attention to TODO lines).
+
+5. Install ESPHome firmware to ESP32 device and place device close to the lock.
+
+That's it, enjoy. If you're here, i believe, you know what to do with ESPHome.
+
+## Custom firmware
 
 1. Get the code from repository, and flash it to ESP32 using PlatformIO or other IDE.
 Or, download only latest firmware_%VERSION%.bin file, and flash using ESP flasher or other flashing tool.
