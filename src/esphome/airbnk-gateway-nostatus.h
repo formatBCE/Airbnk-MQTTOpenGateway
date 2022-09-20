@@ -185,20 +185,21 @@ class AirbnkGatewayNodeComponent : public Component, public CustomMQTTDevice {
                         ESP_LOGD("airbnk_mqtt_scanner", "Failed to get characteristic.");
                         error = "FAILED TO GET CHARACTERISTIC";
                     } else {
+                        ESP_LOGD("airbnk_mqtt_scanner", "Writing command.");
                             if (
                             pRemoteCharacteristic->writeValue(command1, len1, true)
                             && pRemoteCharacteristic->writeValue(command2, len2, true)
                             ) {
+                                ESP_LOGD("airbnk_mqtt_scanner", "Successfully send command.");
                                 error = "";
                                 result = true;
                             } else {
                                 error = "FAILED TO WRITE";
                                 ESP_LOGD("airbnk_mqtt_scanner", "Failed to write characteristic.");
                             }
-                            delete pRemoteCharacteristic;
                         }
-                        delete pRemoteService;
                 }
+                ESP_LOGD("airbnk_mqtt_scanner", "Disconnecting from lock.");
             nimBleClient->disconnect();
             } else {
                 ESP_LOGD("airbnk_mqtt", "Failed to connect to lock.");
@@ -207,7 +208,9 @@ class AirbnkGatewayNodeComponent : public Component, public CustomMQTTDevice {
             retry++;
         }
         isSending = false;
+        ESP_LOGD("airbnk_mqtt_scanner", "Sending operation result.");
         sendCommandResult(result, error, sign, status);
+        ESP_LOGD("airbnk_mqtt_scanner", "Restarting scanning.");
         xTaskCreatePinnedToCore(scanLock, "BLE Scan", 4096, pScan, 1, &nimScan, 1);
     }
 
