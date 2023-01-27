@@ -183,45 +183,46 @@ class AirbnkGatewayNodeComponent : public Component, public CustomMQTTDevice {
                 } else {
                     NimBLERemoteCharacteristic* pRemoteCharacteristic = pRemoteService->getCharacteristic(NimBLEUUID(shortCharactUuid));
                     if (pRemoteCharacteristic == nullptr) {
-                        ESP_LOGD("airbnk_mqtt_scanner", "Failed to get characteristic.");
+                        ESP_LOGD("airbnk_mqtt", "Failed to get characteristic.");
                         error = "FAILED TO GET CHARACTERISTIC";
                     } else {
+                        ESP_LOGD("airbnk_mqtt", "Writing command.");
                             if (
                             pRemoteCharacteristic->writeValue(command1, len1, true)
                             && pRemoteCharacteristic->writeValue(command2, len2, true)
                             ) {
-                                 NimBLERemoteCharacteristic* pStatusCharacteristic = pRemoteService->getCharacteristic(NimBLEUUID(statusCharactUuid));
-                                 if (pStatusCharacteristic == nullptr) {
-                                     ESP_LOGD("airbnk_mqtt_scanner", "Failed to get status characteristic.");
-                                     error = "FAILED TO GET STATUS CHARACTERISTIC";
-                                 } else {
-                                     time_t timestamp = (time_t) 0;
-                                     int tries = 10;
-                                     while (tries > 0 && (status.empty() || (0 == status.compare(status.length() - 2, 2, "00")))) {
-                                         if (tries < 10) {
-                                             delay(700);
-                                         }
-                                         std::string readStatus = pStatusCharacteristic->readValue(&timestamp);
-                                         if (readStatus.empty()) {
-                                             tries = 0;
-                                             error = "FAILED TO READ STATUS";
-                                             ESP_LOGD("airbnk_mqtt_scanner", "Failed to read status characteristic.");
-                                         } else {
+                                NimBLERemoteCharacteristic* pStatusCharacteristic = pRemoteService->getCharacteristic(NimBLEUUID(statusCharactUuid));
+                                if (pStatusCharacteristic == nullptr) {
+                                    ESP_LOGD("airbnk_mqtt", "Failed to get status characteristic.");
+                                    error = "FAILED TO GET STATUS CHARACTERISTIC";
+                                } else {
+                                    time_t timestamp = (time_t) 0;
+                                    int tries = 10;
+                                    while (tries > 0 && (status.empty() || (0 == status.compare(status.length() - 2, 2, "00")))) {
+                                        if (tries < 10) {
+                                            delay(100);
+                                        }
+                                        std::string readStatus = pStatusCharacteristic->readValue(&timestamp);
+                                        if (readStatus.empty()) {
+                                            tries = 0;
+                                            error = "FAILED TO READ STATUS";
+                                            ESP_LOGD("airbnk_mqtt", "Failed to read status characteristic.");
+                                        } else {
+                                            ESP_LOGD("airbnk_mqtt", "Successfully sent command.");
                                             error = "";
                                             result = true;
                                             status = toHex(readStatus);
-                                         }
-                                         tries--;
-                                     }
-                                 }
+                                        }
+                                        tries--;
+                                    }
+                                }
                             } else {
                                 error = "FAILED TO WRITE";
-                                ESP_LOGD("airbnk_mqtt_scanner", "Failed to write characteristic.");
+                                ESP_LOGD("airbnk_mqtt", "Failed to write characteristic.");
                             }
-                            delete pRemoteCharacteristic;
                         }
-                        delete pRemoteService;
                 }
+            ESP_LOGD("airbnk_mqtt", "Disconnecting from lock.");
             nimBleClient->disconnect();
             } else {
                 ESP_LOGD("airbnk_mqtt", "Failed to connect to lock.");
@@ -230,7 +231,9 @@ class AirbnkGatewayNodeComponent : public Component, public CustomMQTTDevice {
             retry++;
         }
         isSending = false;
+        ESP_LOGD("airbnk_mqtt", "Sending operation result.");
         sendCommandResult(result, error, sign, status);
+        ESP_LOGD("airbnk_mqtt", "Restarting scanning.");
         xTaskCreatePinnedToCore(scanLock, "BLE Scan", 4096, pScan, 1, &nimScan, 1);
     }
 
@@ -255,7 +258,7 @@ class AirbnkGatewayNodeComponent : public Component, public CustomMQTTDevice {
             }
     };
     
- public:
+public:
     std::string advert_topic;
     std::string command_topic;
     std::string command_result_topic;
