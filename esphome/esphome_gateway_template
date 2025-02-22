@@ -1,38 +1,19 @@
 esphome:
-  ....
-# ADD THIS - SECTION 1:
-  includes:
-    - airbnk-gateway.h
   libraries:
     - "h2zero/NimBLE-Arduino"
-# END OF SECTION 1
 
-esp32:
-  ....
-
-logger:
-
-api:
-  ....
-
-ota:
-  ....
-
-wifi:
-  ....
-
-captive_portal:
-
-# ADD THIS - SECTION 2
 mqtt:
   broker: 192.168.0.1 # TODO replace with your MQTT server IP
   username: !secret mqtt_user # TODO replace with your MQTT user or remove
   password: !secret mqtt_password # TODO replace with your MQTT password or remove
   discovery: false
 
-custom_component:
-- lambda: |- # TODO replace parameters with your lock mac and HA integration topic
-    auto my_node = new AirbnkGatewayNodeComponent("AA:AA:AA:AA:AA:AA", "mqtt_topic");
-    return {my_node};
-# END OF SECTION 2
+external_components:
+  - source: local
+    components: [airbnk_gateway]
+
+my_component:
+  id: my_custom_mqtt_device
+  mac_address: "AA:BB:CC:DD:EE:FF" # TODO replace with capitalized lock MAC arrdess
+  mqtt_topic: "mqtt_topic" # TODO replace with your MQTT topic
     
