@@ -100,7 +100,7 @@ void scanLock(void* parameter) {
     while (1) {
         if (!pScan->isScanning()) {
             ESP_LOGD("airbnk_mqtt", "Start scanning...");
-            pScan->start(0, nullptr, false);
+            pScan->start(0, false, true);
         }
         ESP_LOGD("airbnk_mqtt", "BLE scan heartbeat");
         delay(5000);
@@ -109,7 +109,7 @@ void scanLock(void* parameter) {
 
 class AirbnkGatewayNodeComponent : public Component, public CustomMQTTDevice {
 
-    bool reportDevice(NimBLEAdvertisedDevice& advertisedDevice) {
+    bool reportDevice(const NimBLEAdvertisedDevice& advertisedDevice) {
         NimBLEAddress address = advertisedDevice.getAddress();
         std::string mac_address = capitalizeString(address.toString().c_str());
         if (mac_address != lock_mac.c_str()) {
@@ -119,15 +119,14 @@ class AirbnkGatewayNodeComponent : public Component, public CustomMQTTDevice {
         lockAddress = address;
 
         std::string manData = advertisedDevice.getManufacturerData();
-        char *pHex = NimBLEUtils::buildHexData(nullptr, (uint8_t*)manData.data(), manData.length());
+        std::string hex = NimBLEUtils::dataToHexString((uint8_t*)manData.data(), manData.length());
         ESP_LOGD("airbnk_mqtt", "Sending adv");
         int RSSI = advertisedDevice.getRSSI();
-        publish_json(advert_topic.c_str(), [=](JsonObject root) {
+        publish_json(advert_topic.c_str(), [=, this](JsonObject root) {
             root["mac"] = mac_address;
             root["rssi"] = RSSI;
-            root["data"] = pHex;
+            root["data"] = hex;
         }, 1, false);
-        delete pHex;
         return true;
     }
 
@@ -135,7 +134,7 @@ class AirbnkGatewayNodeComponent : public Component, public CustomMQTTDevice {
         while (!is_connected()) { // WiFi most likely was disconnected during command write. Meh.
             delay(100);
         }
-        publish_json(command_result_topic.c_str(), [=](JsonObject root) {
+        publish_json(command_result_topic.c_str(), [=, this](JsonObject root) {
             root["success"] = success;
             root["error"] = error.c_str();
             root["sign"] = sign;
@@ -253,7 +252,7 @@ class AirbnkGatewayNodeComponent : public Component, public CustomMQTTDevice {
         public:
             BleAdvertisedDeviceCallbacks(AirbnkGatewayNodeComponent& parent) : parent_(parent) {}
 
-            void onResult(NimBLEAdvertisedDevice* device) {
+            void onResult(const NimBLEAdvertisedDevice* device) {
                 parent_.reportDevice(*device);
             }
     };
@@ -274,7 +273,7 @@ public:
         NimBLEDevice::init("");
         NimBLEDevice::setPower(ESP_PWR_LVL_P9);
         pScan = NimBLEDevice::getScan();
-        pScan->setAdvertisedDeviceCallbacks(new BleAdvertisedDeviceCallbacks(*this), true);
+        pScan->setScanCallbacks(new BleAdvertisedDeviceCallbacks(*this), true);
         pScan->setInterval(scanInterval);
         pScan->setWindow(scanWindow);
         pScan->setActiveScan(false);
